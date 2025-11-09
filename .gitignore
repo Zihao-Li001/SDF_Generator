@@ -1,0 +1,5 @@
+# ignore generated files
+dataset
+
+# ignore temporary file
+representation/__pycache__/
