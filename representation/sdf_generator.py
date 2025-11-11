@@ -30,6 +30,9 @@ class SDFGenerator:
         self.mesh = None
 
     def load_mesh(self, mesh_file_path: str) -> trimesh.Trimesh:
+        """
+        Loading STL mesh
+        """
         if not os.path.exists(mesh_file_path):
             raise FileNotFoundError(f"Mesh file not found: {mesh_file_path}")
 
@@ -37,7 +40,7 @@ class SDFGenerator:
         try:
             mesh = trimesh.load_mesh(mesh_file_path)
             if not mesh.is_watertight:
-                print("Warning: Mesh is not watertight. Attempting to repair.")
+                print("Warning: STL Mesh is not watertight. Attempting to repair.")
                 mesh.fill_holes()
                 if not mesh.is_watertight:
                     raise ValueError("The loaded STL mesh is not watertight.")
@@ -121,6 +124,9 @@ def process_sdf(
     """
     Main processing pipeline to generate and save an SDF from a mesh file.
     """
+    import time
+
+    start_time = time.time()
     try:
         sdf_gen = SDFGenerator(
             resolution=resolution, padding=padding, box_size=box_size
@@ -130,5 +136,18 @@ def process_sdf(
         sdf_results = sdf_gen.generate_sdf(mesh)
         sdf_gen.save_sdf_to_npy(sdf_results["sdf_grid"], output_filepath)
 
+        print("--- %s seconds ---" % (time.time() - start_time))
+        mesh.show()
     except (FileNotFoundError, ValueError, Exception) as e:
         print(f"An error during SDF processing {input_filepath}: {e}")
+
+
+if __name__ == "__main__":
+
+    process_sdf(
+        input_filepath="./dataset_test/stl/particle_Ar0.50_ang0.0.stl",
+        output_filepath="./dataset_test/sdf/",
+        resolution=64,
+        padding=0.0,
+        box_size=2.0,
+    )

@@ -1,5 +1,7 @@
 # ignore generated files
 dataset
+~dataset
 
 # ignore temporary file
 representation/__pycache__/
+processing_log.txt
