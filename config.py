@@ -12,15 +12,15 @@ class DatasetConfig:
 
     # ===== Flow Parameter =====
     FLOW_PARAM_RANGES = {
-        "incident_angle": (0, 90),  # incident angle
+        "incident_angle": (0, 180),  # incident angle
         "reynolds_number": (10, 300),  # Reynold number
     }
 
     # ===== Sampling =====
     SAMPLING = {
-        "n_geometries": 2,  # total number of geometries
-        "n_flow_per_geometry": 2,  # number of flow condition for each geom
-        "mode": "lhs",  # Sampling Mode: lhs/random
+        "n_geometries": 4,  # total number of geometries
+        "n_flow_per_geometry": 32,  # number of flow condition for each geom
+        "mode": "physics",  # Sampling Mode: lhs/random/physics
         "lhs_criterion": "maximin",  # LHS Optimization Criterion
     }
 
@@ -34,10 +34,10 @@ class DatasetConfig:
     # ===== Output =====
     OUTPUT = {
         "dataset_dir": "dataset",
-        "geometry_dir": "stl",
+        "stl_dir": "stl",
         "voxel_dir": "voxel",
         "sdf_dir": "sdf",
-        "metadata_file": "metadata.csv",
+        "metadata_dir": "metadata.csv",
     }
 
     @property

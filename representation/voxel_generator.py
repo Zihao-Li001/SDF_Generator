@@ -88,7 +88,7 @@ def process_voxel(stl_filepath: str, output_filepath: str, resolution: int = 64)
     """
     Args:
         stl_filepath (str): 输入的STL文件路径。
-        output_filepath (str): 输出的Voxel文件路径 (应以 .npy.z 结尾)。
+        output_filepath (str): 输出的Voxel文件路径 (应以 .npy 结尾)。
         resolution (int): Voxel的分辨率。
     """
     try:

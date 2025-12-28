@@ -27,8 +27,7 @@ def load_compressed_npy(file_path):
 
 # --- Configuration ---
 # Set the path to the .npy.z file you want to visualize
-# SDF_FILE_PATH = "./dataset/heaviside/particle_0000_02.npy.h.npy.z"
-SDF_FILE_PATH = "./dataset/sdf/particle_0000_02.npy.z"
+SDF_FILE_PATH = "./dataset/heaviside/particle_0000_00.npy.h.npy.z"
 
 # The surface of a Signed Distance Field is at level 0
 CONTOUR_LEVEL = 0.0

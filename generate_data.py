@@ -20,12 +20,11 @@ from representation.voxel_generator import process_voxel
 from representation.sdf_generator import process_sdf
 from representation.calc_geom_metadata import compute_geom_info, FLOW_DIR
 
-GEOMETRY_DIR = os.path.join(CONFIG.OUTPUT["dataset_dir"], CONFIG.OUTPUT["geometry_dir"])
-VOXEL_DIR = os.path.join(CONFIG.OUTPUT["dataset_dir"], CONFIG.OUTPUT["voxel_dir"])
-SDF_DIR = os.path.join(CONFIG.OUTPUT["dataset_dir"], CONFIG.OUTPUT["sdf_dir"])
-METADATA_PATH = os.path.join(
-    CONFIG.OUTPUT["dataset_dir"], CONFIG.OUTPUT["metadata_file"]
-)
+DATASET_ROOT = Path(CONFIG.OUTPUT["dataset_dir"]).resolve()
+STL_DIR = DATASET_ROOT / CONFIG.OUTPUT["stl_dir"]
+VOXEL_DIR = DATASET_ROOT / CONFIG.OUTPUT["voxel_dir"]
+SDF_DIR = DATASET_ROOT / CONFIG.OUTPUT["sdf_dir"]
+METADATA_PATH = DATASET_ROOT / CONFIG.OUTPUT["metadata_dir"]
 
 
 class SuppressPrints:
@@ -57,23 +56,25 @@ def generate_one(args):
         geom["vertices"] = add_gaussian_noise(geom["vertices"], scale=0.01)
 
     records = []
-    geometry_dir = os.path.join(
-        config.OUTPUT["dataset_dir"], config.OUTPUT["geometry_dir"]
-    )
-    voxel_dir = os.path.join(config.OUTPUT["dataset_dir"], config.OUTPUT["voxel_dir"])
-    sdf_dir = os.path.join(config.OUTPUT["dataset_dir"], config.OUTPUT["sdf_dir"])
+    dataset_root = Path(config.OUTPUT["dataset_dir"]).resolve()
+    stl_dir = dataset_root / config.OUTPUT["stl_dir"]
+    voxel_dir = dataset_root / config.OUTPUT["voxel_dir"]
+    sdf_dir = dataset_root / config.OUTPUT["sdf_dir"]
 
     for fidx, flow_params in enumerate(flow_params_list[idx]):
-        geom_id = f"particle_{idx:04d}_{fidx:02d}"
+        geom_id = idx + 1
+        rotate_id = fidx + 1
+        sample_id = geom_id * 1000 + rotate_id
+
         angle, re = flow_params
         rotated_vertices = R(geom["vertices"], 90 - angle, axis="y")
         Cd_eq = calculate_drag_coefficient(re, ar, angle)
 
-        stl_path = os.path.join(geometry_dir, f"{geom_id}.stl")
-        voxel_path = os.path.join(voxel_dir, f"{geom_id}.npy")
-        sdf_path = os.path.join(sdf_dir, f"{geom_id}.npy")
+        stl_path = stl_dir / f"{sample_id}.stl"
+        voxel_path = voxel_dir / f"{sample_id}.npy"
+        sdf_path = sdf_dir / f"{sample_id}.npy"
 
-        save_stl_from_data(stl_path, rotated_vertices, geom["faces"])
+        save_stl_from_data(str(stl_path), rotated_vertices, geom["faces"])
         try:
             _, d_eq, a_ref = compute_geom_info(Path(stl_path), FLOW_DIR)
         except Exception as e:
@@ -86,16 +87,21 @@ def generate_one(args):
 
         records.append(
             {
+                "sample_id": sample_id,
                 "geom_id": geom_id,
+                "rotate_id": rotate_id,
                 "aspect_ratio": ar,
                 "incident_angle": angle,
                 "lRef": d_eq,
                 "Aref": a_ref,
                 "Re": re,
-                "Cd(equation)": Cd_eq,
-                "stl_file": stl_path,
-                "voxel_file": voxel_path,
-                "sdf_file": sdf_path,
+                "Cd_equation": Cd_eq,
+                "stl_path": stl_path.relative_to(dataset_root).as_posix(),
+                "voxel_path": voxel_path.relative_to(dataset_root).as_posix(),
+                "sdf_path": sdf_path.relative_to(dataset_root).as_posix(),
+                # "stl_path": stl_path,
+                # "voxel_path": voxel_path,
+                # "sdf_path": sdf_path,
             }
         )
     return records
@@ -104,7 +110,7 @@ def generate_one(args):
 def main(enable_voxel=False, enable_sdf=False, add_noise_to_geom=False):
     print("Start to generate dataset...")
 
-    os.makedirs(GEOMETRY_DIR, exist_ok=True)
+    os.makedirs(STL_DIR, exist_ok=True)
     if enable_voxel:
         os.makedirs(VOXEL_DIR, exist_ok=True)
     if enable_sdf:
@@ -125,16 +131,18 @@ def main(enable_voxel=False, enable_sdf=False, add_noise_to_geom=False):
     base_mesh = create_base_sh_mesh(level=CONFIG.COMPUTATION["mesh_level"])
 
     fieldnames = [
+        "sample_id",
         "geom_id",
+        "rotate_id",
         "aspect_ratio",
         "incident_angle",
         "lRef",
         "Aref",
         "Re",
-        "Cd(equation)",
-        "stl_file",
-        "voxel_file",
-        "sdf_file",
+        "Cd_equation",
+        "stl_path",
+        "voxel_path",
+        "sdf_path",
     ]
 
     # generate geometry while write the metadate.csv

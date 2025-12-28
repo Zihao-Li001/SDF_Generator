@@ -1,12 +1,12 @@
 import trimesh
-from mesh_to_sdf import mesh_to_voxels
 import time, glob, os, multiprocessing, io, zlib
 import numpy as np
 from itertools import islice
+from representation.voxel_generator import process_voxel
 
 # Set input and output directories
 INPUT_DIR = "./dataset/stl/"
-OUTPUT_DIR = "./dataset/sdf/"
+OUTPUT_DIR = "./dataset/voxel/"
 
 # Set SDF parameters
 VOXEL_RESOLUTION = 64
@@ -16,11 +16,10 @@ PAD_VOXELS = False
 # Set to None to use all available cores
 # Set to a sepcific integer to limie the core count
 NUM_CORES = 12
-COMPRESSION_LEVEL = 6
 # --- End Control ---
 
 # Log File
-LOG_FILE = "processing_log.txt"
+LOG_FILE = "processing_voxel_log.txt"
 
 BATCH_SIZE = 200
 CHUNKSIZE = 1
@@ -29,61 +28,39 @@ CHUNKSIZE = 1
 def process_file(stl_path):
     """
     Worker function to process a single STL file.
-    Loads the mesh, computes the SDF, and save it as a .npy file.
+    Loads the mesh, computes the binary occupancy voxel,
+    and save it as a .npy file.
     """
-    # --- Logging ---
-    try:
-        with open(LOG_FILE, "a", encoding="utf-8") as log:
-            log.write(f"STARTING: {stl_path}\n")
-    except Exception:
-        pass
-    # --- End Log ---
+    # Define output path
+    base_name = os.path.basename(stl_path)
+    file_name = os.path.splitext(base_name)[0]
+    output_path = os.path.join(OUTPUT_DIR, f"{file_name}.npy")
+
+    # --- Log helper ---
+    def write_log(msg: str):
+        try:
+            with open(LOG_FILE, "a", encoding="utf-8") as log:
+                log.write(msg + "\n")
+        except Exception:
+            pass
+
+    # --- Start log ---
+    write_log(f"START: {stl_path}")
+
+    # --- Skip case ---
+    if os.path.exists(output_path):
+        write_log(f"SKIP: {stl_path} (already processed)")
+        return
 
     try:
-        # Define output path
-        base_name = os.path.basename(stl_path)
-        file_name = os.path.splitext(base_name)[0]
-        output_path = os.path.join(OUTPUT_DIR, f"{file_name}.npy.z")
-
-        # Optional: Skip if the file has already been processed
-        if os.path.exists(output_path):
-            # --- Log ---
-            try:
-                with open(LOG_FILE, "a", encoding="utf-8") as log:
-                    log.write(f"SKIPPED: {stl_path}\n")
-            except Exception:
-                pass
-            # --- End Log ---
-            return
-
-        # Load the mesh using trimesh
+        # --- Load mesh (using trimesh) ---
         mesh = trimesh.load(stl_path)
 
-        # Convert mesh to SDF voxels
-        voxels = mesh_to_voxels(
-            mesh,
-            voxel_resolution=VOXEL_RESOLUTION,
-            pad=PAD_VOXELS,
-            sign_method="normal",
-        )
+        # --- Binary Occupancy Voxel generate ---
+        process_voxel(stl_path, output_path, resolution=VOXEL_RESOLUTION)
 
         # Explicitly delete mesh, release memory
         del mesh
-
-        # --- Save as compressed .npy.z ---
-        # Save the array to an in-memory bytes buffer
-        buffer = io.BytesIO()
-        np.save(buffer, voxels)
-        buffer.seek(0)
-
-        # Read the .npy data from the buffer and compress it
-        npy_data = buffer.read()
-        compressed_data = zlib.compress(npy_data, level=COMPRESSION_LEVEL)
-
-        # Write the compressed bytes to the final .npy.z file
-        with open(output_path, "wb") as f:
-            f.write(compressed_data)
-        # --- End of save logic ---
 
         # --- Log: success ---
         try:
@@ -137,8 +114,7 @@ def main():
         return
 
     print(f"Found {len(stl_files)} STL files to process.")
-    print(f"Output will be saved as .npy.z files in '{OUTPUT_DIR}'.")
-    print(f"Using {VOXEL_RESOLUTION}^3 resolution.")
+    print(f"Output will be saved as .npy files in '{OUTPUT_DIR}'.")
 
     # --- CPU Core Logic ---
     available_cores = multiprocessing.cpu_count()

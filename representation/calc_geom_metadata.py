@@ -16,7 +16,7 @@ from config import CONFIG
 
 # ------ User setting
 # Path to metadata.csv
-META_CSV = Path(f'{CONFIG.OUTPUT["dataset_dir"]}/{CONFIG.OUTPUT["metadata_file"]}')
+META_CSV = Path(f'{CONFIG.OUTPUT["dataset_dir"]}/{CONFIG.OUTPUT["metadata_dir"]}')
 # Path to STL file
 STL_PATH_COLUME = "stl_file"
 # Flow direction x-axis

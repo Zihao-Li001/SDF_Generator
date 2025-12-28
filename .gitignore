@@ -1,7 +1,8 @@
 # ignore generated files
-dataset
-~dataset
+dataset*
+*dataset
 
 # ignore temporary file
-representation/__pycache__/
+__pycache__
 processing_log.txt
+
