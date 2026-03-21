@@ -39,7 +39,3 @@ def calculate_drag_coefficient(
     Cd = term1 + term2 + term3 + term4
 
     return Cd
-
-
-Cd = calculate_drag_coefficient(200, 0.5, 45)
-# print(f"{Cd}")
