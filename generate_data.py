@@ -1,12 +1,13 @@
 import argparse
-from tqdm import tqdm
 import csv
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
+from typing import Any, Dict
 
-# geometry generator tool
-from drag_coeff import calculate_drag_coefficient
+from tqdm import tqdm
+
 from config import CONFIG
+from physics import SampleContext, build_default_registry
 from representation.sampling import ParameterSampler
 from representation.geom_generator import generate_sh_particle, create_base_sh_mesh
 from representation.funcs import rotate_vertices as R
@@ -14,7 +15,6 @@ from representation.funcs import add_gaussian_noise
 from representation.funcs import save_stl_from_data
 from representation.voxel_generator import process_voxel
 from representation.sdf_generator import process_sdf
-from representation.calc_geom_metadata import compute_geom_info, FLOW_DIR
 
 # -------------------------
 # dataset paths
@@ -34,6 +34,7 @@ _CONFIG = None
 _ENABLE_VOXEL = None
 _ENABLE_SDF = None
 _ADD_NOISE = None
+_CALCULATOR_REGISTRY = None
 
 
 def _init_worker(
@@ -43,10 +44,11 @@ def _init_worker(
     enable_voxel,
     enable_sdf,
     add_noise,
+    calculator_registry,
 ):
     """Initializer for worker processes."""
     global _BASE_MESH, _FLOW_PARAMS_LIST, _CONFIG
-    global _ENABLE_VOXEL, _ENABLE_SDF, _ADD_NOISE
+    global _ENABLE_VOXEL, _ENABLE_SDF, _ADD_NOISE, _CALCULATOR_REGISTRY
 
     _BASE_MESH = base_mesh
     _FLOW_PARAMS_LIST = flow_params_list
@@ -54,6 +56,51 @@ def _init_worker(
     _ENABLE_VOXEL = enable_voxel
     _ENABLE_SDF = enable_sdf
     _ADD_NOISE = add_noise
+    _CALCULATOR_REGISTRY = calculator_registry
+
+
+def build_sample_context(
+    dataset_root: Path,
+    geom_id: int,
+    rotate_id: int,
+    aspect_ratio: float,
+    d2: float,
+    d9: float,
+    incident_angle: float,
+    reynolds_number: float,
+    stl_path: Path,
+    voxel_path: Path,
+    sdf_path: Path,
+) -> SampleContext:
+    return SampleContext(
+        sample_id=geom_id * 1000 + rotate_id,
+        geom_id=geom_id,
+        rotate_id=rotate_id,
+        aspect_ratio=aspect_ratio,
+        d2=d2,
+        d9=d9,
+        incident_angle=incident_angle,
+        reynolds_number=reynolds_number,
+        dataset_root=dataset_root,
+        stl_path=stl_path,
+        voxel_path=voxel_path,
+        sdf_path=sdf_path,
+    )
+
+
+def build_metadata_record(context: SampleContext, variable_outputs: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "sample_id": context.sample_id,
+        "geom_id": context.geom_id,
+        "rotate_id": context.rotate_id,
+        "aspect_ratio": context.aspect_ratio,
+        "incident_angle": context.incident_angle,
+        "Re": context.reynolds_number,
+        **variable_outputs,
+        "stl_path": context.stl_path.relative_to(context.dataset_root).as_posix(),
+        "voxel_path": context.voxel_path.relative_to(context.dataset_root).as_posix(),
+        "sdf_path": context.sdf_path.relative_to(context.dataset_root).as_posix(),
+    }
 
 
 def generate_one(idx_and_params):
@@ -79,54 +126,41 @@ def generate_one(idx_and_params):
     for fidx, flow_params in enumerate(_FLOW_PARAMS_LIST[idx]):
         geom_id = idx + 1
         rotate_id = fidx + 1
-        sample_id = geom_id * 1000 + rotate_id
 
         angle, re = flow_params
         rotated_vertices = R(geom["vertices"], 90 - angle, axis="y")
-        Cd_eq = calculate_drag_coefficient(re, ar, angle)
 
-        stl_path = stl_dir / f"{sample_id}.stl"
-        voxel_path = voxel_dir / f"{sample_id}.npy"
-        sdf_path = sdf_dir / f"{sample_id}.npy.z"
+        sample_context = build_sample_context(
+            dataset_root=dataset_root,
+            geom_id=geom_id,
+            rotate_id=rotate_id,
+            aspect_ratio=ar,
+            d2=d2,
+            d9=d9,
+            incident_angle=angle,
+            reynolds_number=re,
+            stl_path=stl_dir / f"{geom_id * 1000 + rotate_id}.stl",
+            voxel_path=voxel_dir / f"{geom_id * 1000 + rotate_id}.npy",
+            sdf_path=sdf_dir / f"{geom_id * 1000 + rotate_id}.npy.z",
+        )
 
-        save_stl_from_data(str(stl_path), rotated_vertices, geom["faces"])
-
-        try:
-            _, d_eq, a_ref = compute_geom_info(stl_path, FLOW_DIR)
-        except Exception as e:
-            print(f"[Warn] cannot compute geom info. Error: {e}")
-            d_eq, a_ref = float("nan"), float("nan")
+        save_stl_from_data(str(sample_context.stl_path), rotated_vertices, geom["faces"])
 
         if _ENABLE_VOXEL:
             process_voxel(
-                str(stl_path),
-                str(voxel_path),
+                str(sample_context.stl_path),
+                str(sample_context.voxel_path),
                 _CONFIG.COMPUTATION["voxel_resolution"],
             )
         if _ENABLE_SDF:
             process_sdf(
-                str(stl_path),
-                str(sdf_path),
+                str(sample_context.stl_path),
+                str(sample_context.sdf_path),
                 _CONFIG.COMPUTATION["sdf_resolution"],
             )
 
-        records.append(
-            {
-                "sample_id": sample_id,
-                "geom_id": geom_id,
-                "rotate_id": rotate_id,
-                "aspect_ratio": ar,
-                "incident_angle": angle,
-                "lRef": d_eq,
-                "Aref": a_ref,
-                "Re": re,
-                "Cd_equation": Cd_eq,
-                # store RELATIVE paths in metadata
-                "stl_path": stl_path.relative_to(dataset_root).as_posix(),
-                "voxel_path": voxel_path.relative_to(dataset_root).as_posix(),
-                "sdf_path": sdf_path.relative_to(dataset_root).as_posix(),
-            }
-        )
+        variable_outputs = _CALCULATOR_REGISTRY.compute_all(sample_context)
+        records.append(build_metadata_record(sample_context, variable_outputs))
 
     return records
 
@@ -153,6 +187,7 @@ def main(enable_voxel=False, enable_sdf=False, add_noise_to_geom=False):
 
     geom_params, flow_params_list = sampler.generate_sample()
     base_mesh = create_base_sh_mesh(level=CONFIG.COMPUTATION["mesh_level"])
+    calculator_registry = build_default_registry()
 
     fieldnames = [
         "sample_id",
@@ -160,10 +195,8 @@ def main(enable_voxel=False, enable_sdf=False, add_noise_to_geom=False):
         "rotate_id",
         "aspect_ratio",
         "incident_angle",
-        "lRef",
-        "Aref",
         "Re",
-        "Cd_equation",
+        *calculator_registry.fieldnames(),
         "stl_path",
         "voxel_path",
         "sdf_path",
@@ -191,6 +224,7 @@ def main(enable_voxel=False, enable_sdf=False, add_noise_to_geom=False):
                 enable_voxel,
                 enable_sdf,
                 add_noise_to_geom,
+                calculator_registry,
             ),
         ) as pool:
             for records in pool.imap_unordered(generate_one, tasks):
