@@ -9,6 +9,7 @@ from .geometry_metrics import GEOMETRY_METRIC_FIELDNAMES, compute_geometry_metri
 DerivedFieldProvider = Callable[[SampleContext], Dict[str, Any]]
 DerivedFieldEntry = Tuple[Sequence[str], DerivedFieldProvider]
 
+# 默认provider列表
 DEFAULT_DERIVED_FIELD_PROVIDERS: List[DerivedFieldEntry] = [
     (GEOMETRY_METRIC_FIELDNAMES, compute_geometry_metrics),
     (DRAG_FIELDNAMES, compute_drag_outputs),

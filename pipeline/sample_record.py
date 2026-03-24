@@ -21,6 +21,9 @@ def build_metadata_record(
     context: SampleContext,
     derived_outputs: Dict[str, Any],
 ) -> Dict[str, Any]:
+    """
+    combine the context and derived-output togother as one CSV row
+    """
     return {
         "sample_id": context.sample_id,
         "geom_id": context.geom_id,

@@ -39,3 +39,22 @@ def calculate_drag_coefficient(
     Cd = term1 + term2 + term3 + term4
 
     return Cd
+
+
+def main():
+    test_cases = [
+        {"Re": 10, "Ar": 0.5, "angle": 0.0},
+        {
+            "Ar": 0.5000017768899694,
+            "angle": 0.000148118675391,
+            "Re": 10.000065199649375,
+        },
+    ]
+
+    for case in test_cases:
+        cd = calculate_drag_coefficient(case["Re"], case["Ar"], case["angle"])
+        print(f"Re={case['Re']}, Ar={case['Ar']}, angle={case['angle']} → Cd={cd:.6f}")
+
+
+if __name__ == "__main__":
+    main()
