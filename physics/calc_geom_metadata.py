@@ -14,7 +14,7 @@ import numpy as np
 from pathlib import Path
 from config import CONFIG
 
-# ------ User setting
+# --- User setting --- #
 # Path to metadata.csv
 META_CSV = Path(f'{CONFIG.OUTPUT["dataset_dir"]}/{CONFIG.OUTPUT["metadata_dir"]}')
 # Path to STL file
@@ -38,6 +38,17 @@ def projected_area(mesh: trimesh.Trimesh, flow_dir: np.ndarray) -> float:
     return proj.sum()
 
 
+def compute_sphericity(volume: float, surface_area: float) -> float:
+    """
+    Compute Wadell's true sphericity.
+    Ratio of the surface area of a volume-equivalent sphere
+    to the particle's surface area.
+    """
+    if surface_area == 0:
+        return 0.0
+    return (np.pi ** (1.0 / 3.0) * (6.0 * volume) ** (2.0 / 3.0)) / surface_area
+
+
 def compute_geom_info(stl_path: Path, flow_dir: np.ndarray):
     """
     Compute volume, equivalent diameter, and projected area
@@ -50,9 +61,14 @@ def compute_geom_info(stl_path: Path, flow_dir: np.ndarray):
         print(f"[Warn] {stl_path.name} not watertight, approx.")
 
     volume = mesh.volume
+    surface_area = mesh.area
+
+    # calcuate equivalent diameter, projected area and sphericity
     d_eq = (6.0 * volume / np.pi) ** (1.0 / 3.0)
     a_proj = projected_area(mesh, flow_dir)
-    return volume, d_eq, a_proj
+    sphericity = compute_sphericity(volume, surface_area)
+
+    return volume, d_eq, a_proj, sphericity
 
 
 def main():
