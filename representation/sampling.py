@@ -2,28 +2,23 @@ from config import CONFIG
 
 import numpy as np
 from pyDOE2 import lhs
-from typing import Tuple, List, Dict, Optional
-import sys
-import os
+from typing import Callable, Dict, List, Tuple
 
-# IMPORTANT: ensure relative import works in your package layout
-from .nonuniform_flow_sampler import NonUniformFlowSampler
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+UnitSampler = Callable[[int, int], np.ndarray]
 
 
 class ParameterSampler:
     """
-    Final, unambiguous sampler.
+    Sampler orchestration layer with pluggable mode strategies.
 
-    Sampling modes (config.SAMPLING["mode"]):
+    Supported modes:
       - "random": geometry random, flow random
-      - "lhs":    geometry LHS,    flow LHS
-      - "physics": geometry random (default), flow NonUniformFlowSampler (physics-informed)
+      - "lhs":    geometry LHS, flow LHS
 
-    Notes:
-      - NonUniformFlowSampler generates directly scaled values (angle/Re in physical units).
-      - LHS/random flows are generated in unit hypercube then scaled via _scale_samples.
+    Extensibility:
+      - Add new modes via register_mode().
+      - Each mode provides one unit-hypercube sampler for geometry and one for flow.
+      - Scaling from [0, 1] to physical ranges is handled centrally by _scale_samples().
     """
 
     def __init__(self, config):
@@ -34,32 +29,51 @@ class ParameterSampler:
         self.geom_param_names = list(self.geom_param_ranges.keys())
         self.flow_param_names = list(self.flow_param_ranges.keys())
 
-        self.mode = self.config.SAMPLING["mode"]
-
-        # physics flow sampler only when needed
-        self.flow_sampler: Optional[NonUniformFlowSampler] = None
-        if self.mode == "physics":
-            self.flow_sampler = self._build_physics_flow_sampler()
+        self.mode = self.config.SAMPLING["mode"].lower()
+        self._geometry_mode_samplers: Dict[str, UnitSampler] = {}
+        self._flow_mode_samplers: Dict[str, UnitSampler] = {}
+        self._register_builtin_modes()
 
     # -------------------------
     # helpers
     # -------------------------
-    def _build_physics_flow_sampler(self) -> NonUniformFlowSampler:
-        # Expected keys in FLOW_PARAM_RANGES
-        if "incident_angle" not in self.flow_param_ranges:
-            raise KeyError(
-                "FLOW_PARAM_RANGES must contain 'incident_angle' for physics mode"
-            )
-        if "reynolds_number" not in self.flow_param_ranges:
-            raise KeyError(
-                "FLOW_PARAM_RANGES must contain 'reynolds_number' for physics mode"
-            )
-
-        return NonUniformFlowSampler(
-            n_samples=self.config.SAMPLING["n_flow_per_geometry"],
-            angle_range=self.flow_param_ranges["incident_angle"],
-            re_range=self.flow_param_ranges["reynolds_number"],
+    def _register_builtin_modes(self) -> None:
+        self.register_mode(
+            "lhs",
+            geometry_sampler=self._generate_lhs_samples,
+            flow_sampler=self._generate_lhs_samples,
         )
+        self.register_mode(
+            "random",
+            geometry_sampler=self._generate_random_samples,
+            flow_sampler=self._generate_random_samples,
+        )
+
+    def register_mode(
+        self,
+        mode: str,
+        geometry_sampler: UnitSampler,
+        flow_sampler: UnitSampler,
+    ) -> None:
+        normalized_mode = mode.lower()
+        self._geometry_mode_samplers[normalized_mode] = geometry_sampler
+        self._flow_mode_samplers[normalized_mode] = flow_sampler
+
+    def _generate_unit_samples(
+        self,
+        n_params: int,
+        n_samples: int,
+        *,
+        sampler_map: Dict[str, UnitSampler],
+        sample_kind: str,
+    ) -> np.ndarray:
+        if self.mode not in sampler_map:
+            supported_modes = sorted(set(sampler_map.keys()))
+            raise ValueError(
+                f"Unsupported {sample_kind} sampling mode '{self.mode}'. "
+                f"Supported modes: {supported_modes}"
+            )
+        return sampler_map[self.mode](n_params, n_samples)
 
     def _scale_samples(
         self,
@@ -93,12 +107,12 @@ class ParameterSampler:
         n_geom = self.config.SAMPLING["n_geometries"]
         n_geom_params = len(self.geom_param_ranges)
 
-        if self.mode == "lhs":
-            geom_unit = self._generate_lhs_samples(n_geom_params, n_geom)
-        else:
-            # "random" and "physics" default to random geometry sampling
-            # if you want "physics" geometry to be lhs, change this branch accordingly
-            geom_unit = self._generate_random_samples(n_geom_params, n_geom)
+        geom_unit = self._generate_unit_samples(
+            n_geom_params,
+            n_geom,
+            sampler_map=self._geometry_mode_samplers,
+            sample_kind="geometry",
+        )
 
         return self._scale_samples(
             geom_unit, self.geom_param_ranges, self.geom_param_names
@@ -107,44 +121,24 @@ class ParameterSampler:
     # -------------------------
     # flow sampling
     # -------------------------
-    def _generate_flow_samples_lhs_or_random(self) -> np.ndarray:
+    def _generate_flow_samples_for_mode(self) -> np.ndarray:
         n_flow = self.config.SAMPLING["n_flow_per_geometry"]
         n_flow_params = len(self.flow_param_ranges)
 
-        if self.mode == "lhs":
-            flow_unit = self._generate_lhs_samples(n_flow_params, n_flow)
-        else:
-            flow_unit = self._generate_random_samples(n_flow_params, n_flow)
+        flow_unit = self._generate_unit_samples(
+            n_flow_params,
+            n_flow,
+            sampler_map=self._flow_mode_samplers,
+            sample_kind="flow",
+        )
 
         return self._scale_samples(
             flow_unit, self.flow_param_ranges, self.flow_param_names
         )
 
-    def _generate_flow_samples_physics(self, geom_idx: int) -> np.ndarray:
-        assert (
-            self.flow_sampler is not None
-        ), "flow_sampler must be initialized in physics mode"
-
-        flow_2d = self.flow_sampler.sample(geom_idx)  # shape: (n, 2) -> [angle, re]
-        out = np.zeros((flow_2d.shape[0], len(self.flow_param_names)), dtype=float)
-
-        # Map to configured flow param order
-        for i, name in enumerate(self.flow_param_names):
-            if name == "incident_angle":
-                out[:, i] = flow_2d[:, 0]
-            elif name == "reynolds_number":
-                out[:, i] = flow_2d[:, 1]
-            else:
-                raise KeyError(
-                    f"physics mode supports only 'incident_angle' and 'reynolds_number'. "
-                    f"Unsupported: {name}"
-                )
-        return out
-
     def generate_single_flow_sample_set(self, geom_idx: int) -> np.ndarray:
-        if self.mode == "physics":
-            return self._generate_flow_samples_physics(geom_idx)
-        return self._generate_flow_samples_lhs_or_random()
+        _ = geom_idx  # keep signature for deterministic/per-geometry future strategies
+        return self._generate_flow_samples_for_mode()
 
     def generate_all_flow_samples(self, n_geometries: int) -> List[np.ndarray]:
         return [self.generate_single_flow_sample_set(i) for i in range(n_geometries)]
@@ -185,9 +179,14 @@ class ParameterSampler:
             if self.config.SAMPLING["n_flow_per_geometry"] <= 0:
                 raise ValueError("n_flow_per_geometry must be positive")
 
-            if self.config.SAMPLING["mode"] not in ["lhs", "random", "physics"]:
+            mode = self.config.SAMPLING["mode"].lower()
+            supported_modes = sorted(
+                set(self._geometry_mode_samplers.keys())
+                .intersection(self._flow_mode_samplers.keys())
+            )
+            if mode not in supported_modes:
                 raise ValueError(
-                    "Sampling mode must be one of: 'lhs', 'random', 'physics'"
+                    f"Sampling mode must be one of: {supported_modes}"
                 )
 
             # validate ranges
@@ -200,26 +199,6 @@ class ParameterSampler:
             for param, (low, high) in self.flow_param_ranges.items():
                 if low >= high:
                     raise ValueError(f"Invalid flow range for {param}: {low} >= {high}")
-
-            # physics mode must have expected keys
-            if self.config.SAMPLING["mode"] == "physics":
-                if "incident_angle" not in self.flow_param_ranges:
-                    raise KeyError(
-                        "physics mode requires FLOW_PARAM_RANGES['incident_angle']"
-                    )
-                if "reynolds_number" not in self.flow_param_ranges:
-                    raise KeyError(
-                        "physics mode requires FLOW_PARAM_RANGES['reynolds_number']"
-                    )
-
-                # physics mode currently expects only these two flow params
-                allowed = {"incident_angle", "reynolds_number"}
-                extra = set(self.flow_param_names) - allowed
-                if extra:
-                    raise ValueError(
-                        f"physics mode supports only {sorted(allowed)}. "
-                        f"Found extra flow params: {sorted(extra)}"
-                    )
 
             return True
 

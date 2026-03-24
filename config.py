@@ -20,7 +20,7 @@ class DatasetConfig:
     SAMPLING = {
         "n_geometries": 200,  # total number of geometries
         "n_flow_per_geometry": 20,  # number of flow condition for each geom
-        "mode": "lhs",  # Sampling Mode: lhs/random/physics
+        "mode": "lhs",  # Sampling Mode: lhs/random
         "lhs_criterion": "maximin",  # LHS Optimization Criterion
     }
 
