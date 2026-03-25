@@ -27,15 +27,18 @@ def normalize(v):
     return v / np.linalg.norm(v)
 
 
-def projected_area(mesh: trimesh.Trimesh, flow_dir: np.ndarray) -> float:
+def projected_area(mesh: trimesh.Trimesh, direction: np.ndarray) -> float:
     """
-    Compute projected area along flow direction
+    Compute the actual silhouette area along a specific direction.
+    Note: sum(abs(normals @ dir) * face_areas) returns TWICE the
+    projected silhouette area for a closed, watertight mesh.
     """
-    flow_dir = normalize(flow_dir)
+    direction = normalize(direction)
     normals = mesh.face_normals
     areas = mesh.area_faces
-    proj = np.abs(normals @ flow_dir) * areas
-    return proj.sum()
+    # The dot product method integrated over the surface gives 2 * A_proj
+    total_proj = np.abs(normals @ direction) * areas
+    return 0.5 * total_proj.sum()
 
 
 def compute_sphericity(volume: float, surface_area: float) -> float:
@@ -50,25 +53,32 @@ def compute_sphericity(volume: float, surface_area: float) -> float:
 
 
 def compute_geom_info(stl_path: Path, flow_dir: np.ndarray):
-    """
-    Compute volume, equivalent diameter, and projected area
-    """
-    if not stl_path.exists():
-        raise FileNotFoundError(f"STL not found: {stl_path}")
     mesh = trimesh.load_mesh(stl_path, force="mesh")
-
-    if not mesh.is_watertight:
-        print(f"[Warn] {stl_path.name} not watertight, approx.")
 
     volume = mesh.volume
     surface_area = mesh.area
-
-    # calcuate equivalent diameter, projected area and sphericity
     d_eq = (6.0 * volume / np.pi) ** (1.0 / 3.0)
-    a_proj = projected_area(mesh, flow_dir)
-    sphericity = compute_sphericity(volume, surface_area)
 
-    return volume, d_eq, a_proj, sphericity
+    # 1. Area of the volume-equivalent sphere cross-section
+    a_sphere_cs = (np.pi / 4.0) * (d_eq**2)
+
+    # 2. Crosswise Projected Area (Facing the flow)
+    a_proj_cross = projected_area(mesh, flow_dir)
+
+    # --- Calculations ---
+    # Standard Wadell Sphericity
+    sphericity = (np.pi ** (1 / 3) * (6 * volume) ** (2 / 3)) / surface_area
+
+    # Hölzer & Sommerfeld Sphericity
+    phi_cross = a_sphere_cs / a_proj_cross
+
+    return {
+        "Volume": volume,
+        "D_eq": d_eq,
+        "Reference_area": a_proj_cross,
+        "Sphericity": sphericity,
+        "Phi_Cross": phi_cross,
+    }
 
 
 def main():

@@ -5,7 +5,7 @@
 class DatasetConfig:
     # ===== Geometry Parameter =====
     GEOM_PARAM_RANGES = {
-        "aspect_ratio": (0.5, 0.50001),  # aspect_ratio
+        "aspect_ratio": (0.5, 2.5),  # aspect_ratio
         "d2": (0.0, 0.00001),
         "d9": (0.0, 0.00001),
     }
@@ -13,15 +13,16 @@ class DatasetConfig:
     # ===== Flow Parameter =====
     FLOW_PARAM_RANGES = {
         "incident_angle": (0, 90),  # incident angle
-        "reynolds_number": (10, 10.0001),  # Reynold number
+        "reynolds_number": (10, 300),  # Reynold number
     }
 
     # ===== Sampling ===== #
     SAMPLING = {
-        "n_geometries": 200,  # total number of geometries
-        "n_flow_per_geometry": 20,  # number of flow condition for each geom
-        "mode": "lhs",  # Sampling Mode: lhs/random
+        "n_geometries": 50,  # total number of geometries
+        "n_flow_per_geometry": 10,  # number of flow condition for each geom
+        "mode": "low_re_dense",  # Sampling Mode: lhs/random/low_re_dense
         "lhs_criterion": "maximin",  # LHS Optimization Criterion
+        "re_bias_alpha": 2.5,
     }
 
     # ===== Computation =====

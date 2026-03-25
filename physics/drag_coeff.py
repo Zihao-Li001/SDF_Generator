@@ -1,7 +1,8 @@
 import math
+import numpy as np
 
 
-def calculate_drag_coefficient(
+def calculate_ke_drag(
     reynolds_number: float, aspect_ratio: float, incident_angle_deg: float
 ) -> float:
     """
@@ -41,6 +42,31 @@ def calculate_drag_coefficient(
     return Cd
 
 
+def calculate_holzer_sommerfeld_drag(
+    re: float,
+    phi: float,
+    phi_cross: float,
+) -> float:
+    """
+    Hölzer and Sommerfeld (2008) drag coefficient for non-spherical particles.
+    """
+    # Protect against zero/negative Reynolds numbers
+    if re <= 0:
+        return 0.0
+
+    # Viscous and Pressure drag components
+    term1 = 8.0 / (re * phi_cross)
+    term2 = 16.0 / (re * np.sqrt(phi))
+    term3 = 3.0 / (np.sqrt(re) * (phi**0.75))
+
+    # High Reynolds number correction
+    # Note: 10^(0.4 * (-log10(phi))^0.2)
+    power_val = 0.4 * ((-np.log10(phi)) ** 0.2)
+    term4 = (0.42 * (10**power_val)) / phi_cross
+
+    return term1 + term2 + term3 + term4
+
+
 def main():
     test_cases = [
         {"Re": 10, "Ar": 0.5, "angle": 0.0},
@@ -52,7 +78,7 @@ def main():
     ]
 
     for case in test_cases:
-        cd = calculate_drag_coefficient(case["Re"], case["Ar"], case["angle"])
+        cd = calculate_ke_drag(case["Re"], case["Ar"], case["angle"])
         print(f"Re={case['Re']}, Ar={case['Ar']}, angle={case['angle']} → Cd={cd:.6f}")
 
 

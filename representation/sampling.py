@@ -48,6 +48,11 @@ class ParameterSampler:
             geometry_sampler=self._generate_random_samples,
             flow_sampler=self._generate_random_samples,
         )
+        self.register_mode(
+            "low_re_dense",
+            geometry_sampler=self._generate_lhs_samples,
+            flow_sampler=self._generate_low_re_dense_flow_samples,
+        )
 
     def register_mode(
         self,
@@ -90,15 +95,44 @@ class ParameterSampler:
             scaled[:, i] = samples[:, i] * (high - low) + low
         return scaled
 
-    def _generate_lhs_samples(self, n_params: int, n_samples: int) -> np.ndarray:
+    def _generate_lhs_samples(
+        self,
+        n_params: int,
+        n_samples: int,
+    ) -> np.ndarray:
         return lhs(
             n_params,
             samples=n_samples,
             criterion=self.config.SAMPLING.get("lhs_criterion", "maximin"),
         )
 
-    def _generate_random_samples(self, n_params: int, n_samples: int) -> np.ndarray:
+    def _generate_random_samples(
+        self,
+        n_params: int,
+        n_samples: int,
+    ) -> np.ndarray:
         return np.random.random((n_samples, n_params))
+
+    def _generate_low_re_dense_flow_samples(
+        self,
+        n_params: int,
+        n_samples: int,
+    ) -> np.ndarray:
+        samples = lhs(
+            n_params,
+            samples=n_samples,
+            criterion=self.config.SAMPLING.get("lhs_criterion", "maximin"),
+        )
+
+        try:
+            re_idx = self.flow_param_names.index("reynolds_number")
+        except ValueError:
+            raise KeyError("FLOW_PARAM_RANGES must include 'reynolds_number'")
+
+        alpha = self.config.SAMPLING.get("re_bias_alpha", 2.5)
+        samples[:, re_idx] = samples[:, re_idx] ** alpha
+
+        return samples
 
     # -------------------------
     # geometry sampling
@@ -181,13 +215,12 @@ class ParameterSampler:
 
             mode = self.config.SAMPLING["mode"].lower()
             supported_modes = sorted(
-                set(self._geometry_mode_samplers.keys())
-                .intersection(self._flow_mode_samplers.keys())
+                set(self._geometry_mode_samplers.keys()).intersection(
+                    self._flow_mode_samplers.keys()
+                )
             )
             if mode not in supported_modes:
-                raise ValueError(
-                    f"Sampling mode must be one of: {supported_modes}"
-                )
+                raise ValueError(f"Sampling mode must be one of: {supported_modes}")
 
             # validate ranges
             for param, (low, high) in self.geom_param_ranges.items():
