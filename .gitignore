@@ -2,6 +2,9 @@
 dataset*
 *dataset
 
+# configuration
+config.py
+
 # ignore temporary file
 __pycache__
 processing_log.txt
