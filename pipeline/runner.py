@@ -41,10 +41,11 @@ def ensure_output_dirs(enable_voxel: bool, enable_sdf: bool) -> None:
 
 
 def metadata_fieldnames(derived_field_providers) -> List[str]:
+    artifact_start = BASE_METADATA_FIELDS.index("stl_path")
     return [
-        *BASE_METADATA_FIELDS[:6],
+        *BASE_METADATA_FIELDS[:artifact_start],
         *get_derived_fieldnames(derived_field_providers),
-        *BASE_METADATA_FIELDS[6:],
+        *BASE_METADATA_FIELDS[artifact_start:],
     ]
 
 
@@ -166,12 +167,12 @@ def run_dataset_generation(
     print("[Finished] Sampling")
     print("\n")
 
-    print("-----------------------------")
-    print("------- Create Shape --------")
-    print("-----------------------------")
     # 4. generate geometry/flow sample
     geom_params, flow_params_list = sampler.generate_sample()
 
+    print("-----------------------------")
+    print("------- Create Shape --------")
+    print("-----------------------------")
     # 5. create base mesh
     base_mesh = create_base_sh_mesh(level=CONFIG.COMPUTATION["mesh_level"])
 

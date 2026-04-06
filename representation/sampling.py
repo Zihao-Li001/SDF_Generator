@@ -1,6 +1,7 @@
 from config import CONFIG
 
 import numpy as np
+import itertools
 from pyDOE2 import lhs
 from typing import Callable, Dict, List, Tuple
 
@@ -14,6 +15,9 @@ class ParameterSampler:
     Supported modes:
       - "random": geometry random, flow random
       - "lhs":    geometry LHS, flow LHS
+      - "low_re_dense": geometry LHS, flow high dense in low Re
+      - "grid": geometry grid, flow grid
+                (only support direct value input via SAMPLING["grid_values"])
 
     Extensibility:
       - Add new modes via register_mode().
@@ -52,6 +56,11 @@ class ParameterSampler:
             "low_re_dense",
             geometry_sampler=self._generate_lhs_samples,
             flow_sampler=self._generate_low_re_dense_flow_samples,
+        )
+        self.register_mode(
+            "grid",
+            geometry_sampler=self._generate_grid_samples,
+            flow_sampler=self._generate_grid_samples,
         )
 
     def register_mode(
@@ -95,6 +104,7 @@ class ParameterSampler:
             scaled[:, i] = samples[:, i] * (high - low) + low
         return scaled
 
+    # ------ lhs sampling ------ #
     def _generate_lhs_samples(
         self,
         n_params: int,
@@ -106,12 +116,49 @@ class ParameterSampler:
             criterion=self.config.SAMPLING.get("lhs_criterion", "maximin"),
         )
 
+    # ------- random sampleing ------ #
     def _generate_random_samples(
         self,
         n_params: int,
         n_samples: int,
     ) -> np.ndarray:
         return np.random.random((n_samples, n_params))
+
+    def _generate_grid_samples(
+        self,
+        n_params: int,
+        n_samples: int,
+    ) -> np.ndarray:
+        points_per_dim = int(np.ceil(n_samples ** (1.0 / n_params)))
+        axes = [np.linspace(0.0, 1.0, points_per_dim) for _ in range(n_params)]
+        mesh = np.meshgrid(*axes, indexing="ij")
+        grid = np.stack([m.reshape(-1) for m in mesh], axis=1)
+        return grid[:n_samples]
+
+    def _generate_direct_grid_physical_samples(
+        self,
+        *,
+        sample_kind: str,
+        param_names: List[str],
+        param_ranges: Dict[str, Tuple[float, float]],
+        n_samples: int,
+    ) -> np.ndarray:
+        grid_values = self.config.SAMPLING.get("grid_values", {})
+        kind_grid_values = grid_values.get(sample_kind)
+        if not kind_grid_values:
+            raise ValueError(
+                f"mode='grid' need SAMPLING['grid_values']['{sample_kind}']"
+            )
+
+        axes = []
+        for param in param_names:
+            # 允许用户在 config 中定义物理值列表
+            axis = np.asarray(kind_grid_values[param], dtype=float)
+            axes.append(axis)
+
+        # 使用 itertools.product 生成全因子组合
+        grid = np.array(list(itertools.product(*axes)))
+        return grid
 
     def _generate_low_re_dense_flow_samples(
         self,
@@ -141,6 +188,14 @@ class ParameterSampler:
         n_geom = self.config.SAMPLING["n_geometries"]
         n_geom_params = len(self.geom_param_ranges)
 
+        if self.mode == "grid":
+            return self._generate_direct_grid_physical_samples(
+                sample_kind="geometry",
+                param_names=self.geom_param_names,
+                param_ranges=self.flow_param_ranges,
+                n_samples=n_geom,
+            )
+
         geom_unit = self._generate_unit_samples(
             n_geom_params,
             n_geom,
@@ -159,6 +214,13 @@ class ParameterSampler:
         n_flow = self.config.SAMPLING["n_flow_per_geometry"]
         n_flow_params = len(self.flow_param_ranges)
 
+        if self.mode == "grid":
+            return self._generate_direct_grid_physical_samples(
+                sample_kind="flow",
+                param_names=self.flow_param_names,
+                param_ranges=self.flow_param_ranges,
+                n_samples=n_flow,
+            )
         flow_unit = self._generate_unit_samples(
             n_flow_params,
             n_flow,

@@ -69,11 +69,11 @@ def calculate_holzer_sommerfeld_drag(
 
 def main():
     test_cases = [
-        {"Re": 10, "Ar": 0.5, "angle": 0.0},
+        {"Re": 200, "Ar": 0.25, "angle": 90.0},
         {
-            "Ar": 0.5000017768899694,
-            "angle": 0.000148118675391,
-            "Re": 10.000065199649375,
+            "Ar": 0.668,
+            "angle": 63.408,
+            "Re": 29,
         },
     ]
 
