@@ -81,7 +81,7 @@ def generate_records_for_geometry(idx_and_params):
 
     # 3. loop all flow condition for this geometry
     for fidx, flow_params in enumerate(worker_state.FLOW_PARAMS_LIST[idx]):
-        geom_id = idx + 1
+        geom_id = worker_state.GEOM_ID_START + idx
         rotate_id = fidx + 1
         angle, re = flow_params
 
@@ -148,8 +148,12 @@ def run_dataset_generation(
     enable_voxel: bool = False,
     enable_sdf: bool = False,
     add_noise_to_geom: bool = False,
+    geom_id_start: int = 1,
 ) -> None:
     print("Start runner...")
+    if geom_id_start < 0:
+        raise ValueError("geom_id_start must be >= 0.")
+
     # 1. prepare directories
     ensure_output_dirs(enable_voxel, enable_sdf)
 
@@ -203,6 +207,7 @@ def run_dataset_generation(
                 enable_sdf,
                 add_noise_to_geom,
                 derived_field_providers,
+                geom_id_start,
             ),
         ) as pool:
             with tqdm(
