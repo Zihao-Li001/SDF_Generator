@@ -1,6 +1,5 @@
 import numpy as np
 import os, io, zlib, glob
-from mysdftools.io import load_compressed_npy
 
 # Set input and output directories
 INPUT_DIR = "./dataset/sdf/"
@@ -8,6 +7,23 @@ OUTPUT_DIR = "./dataset/heaviside/"
 EPS = 0.02
 COMPRESSION_LEVEL = 6
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+def load_compressed_npy(file_path):
+    """
+    Loads .npy.z files (numpy array compressed with zlib)
+    and returns the numpy array.
+    """
+    with open(file_path, "rb") as f:
+        # Read the compressed bytes
+        compressed_data = f.read()
+
+    # Decompress the zlib data
+    decompressed_data = zlib.decompress(compressed_data)
+
+    buffer = io.BytesIO(decompressed_data)
+    array = np.load(buffer)
+    return array
 
 
 def sdf_to_heaviside_poly(sdf: np.ndarray, eps: float = 1.0) -> np.ndarray:

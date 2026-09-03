@@ -1,4 +1,7 @@
 from __future__ import annotations
+import os
+import time
+import numpy as np
 
 BASE_MESH = None
 FLOW_PARAMS_LIST = None
@@ -23,6 +26,9 @@ def init_worker(
     global BASE_MESH, FLOW_PARAMS_LIST, CONFIG
     global ENABLE_VOXEL, ENABLE_SDF, ADD_NOISE, DERIVED_FIELD_PROVIDERS
     global GEOM_ID_START
+
+    worker_seed = (os.getpid() ^ time.time_ns()) % (2**32)
+    np.random.seed(worker_seed)
 
     BASE_MESH = base_mesh
     FLOW_PARAMS_LIST = flow_params_list
