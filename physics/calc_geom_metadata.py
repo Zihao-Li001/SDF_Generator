@@ -12,6 +12,9 @@ import trimesh
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from shapely.errors import TopologicalError
+from shapely.geometry import Polygon
+from shapely.ops import unary_union
 from config import CONFIG
 
 # --- User setting --- #
@@ -24,21 +27,92 @@ FLOW_DIR = np.array([1.0, 0.0, 0.0])
 
 
 def normalize(v):
-    return v / np.linalg.norm(v)
+    norm = np.linalg.norm(v)
+    if not np.isfinite(norm) or norm == 0.0:
+        raise ValueError("projection direction must be finite and non-zero")
+    return v / norm
+
+
+def _projection_basis(direction: np.ndarray):
+    """Return a stable orthonormal basis for the plane normal to direction."""
+    direction = normalize(np.asarray(direction, dtype=float))
+    seed = np.eye(3)[np.argmin(np.abs(direction))]
+    axis_u = normalize(np.cross(direction, seed))
+    axis_v = np.cross(direction, axis_u)
+    return axis_u, axis_v
+
+
+def _union_projected_triangles(projected: np.ndarray, scale: float) -> float:
+    """Union projected triangles, retrying once on a scale-aware precision grid."""
+    area_tolerance = 64.0 * np.finfo(float).eps * scale**2
+    chunk_size = 512
+    last_error = None
+
+    for grid_size in (None, 1.0e-12 * scale):
+        coords = projected
+        if grid_size is not None:
+            coords = np.round(coords / grid_size) * grid_size
+
+        edges_1 = coords[:, 1] - coords[:, 0]
+        edges_2 = coords[:, 2] - coords[:, 0]
+        twice_areas = np.abs(
+            edges_1[:, 0] * edges_2[:, 1]
+            - edges_1[:, 1] * edges_2[:, 0]
+        )
+        valid = twice_areas > 2.0 * area_tolerance
+        if not np.any(valid):
+            raise ValueError("mesh has no non-degenerate projected triangles")
+
+        polygons = [Polygon(triangle) for triangle in coords[valid]]
+        try:
+            partial_unions = [
+                unary_union(polygons[start : start + chunk_size])
+                for start in range(0, len(polygons), chunk_size)
+            ]
+            geometry = unary_union(partial_unions)
+            if not geometry.is_valid:
+                geometry = geometry.buffer(0)
+            area = float(geometry.area)
+            if geometry.is_valid and np.isfinite(area) and area > 0.0:
+                return area
+            last_error = ValueError("projected polygon union is invalid or empty")
+        except (TopologicalError, ValueError) as exc:
+            last_error = exc
+
+    raise ValueError(f"cannot construct projected triangle union: {last_error}")
 
 
 def projected_area(mesh: trimesh.Trimesh, direction: np.ndarray) -> float:
     """
-    Compute the actual silhouette area along a specific direction.
-    Note: sum(abs(normals @ dir) * face_areas) returns TWICE the
-    projected silhouette area for a closed, watertight mesh.
+    Compute the true silhouette area normal to ``direction``.
+
+    Every mesh triangle is orthogonally projected to a two-dimensional
+    basis and the returned area is the geometric union of those projected
+    triangles.  This avoids double-counting occluded or overlapping surface
+    patches on non-convex particles.
     """
-    direction = normalize(direction)
-    normals = mesh.face_normals
-    areas = mesh.area_faces
-    # The dot product method integrated over the surface gives 2 * A_proj
-    total_proj = np.abs(normals @ direction) * areas
-    return 0.5 * total_proj.sum()
+    if not isinstance(mesh, trimesh.Trimesh):
+        raise TypeError("mesh must be a trimesh.Trimesh")
+    if len(mesh.faces) == 0 or len(mesh.vertices) == 0:
+        raise ValueError("mesh is empty")
+
+    triangles = np.asarray(mesh.triangles, dtype=float)
+    if triangles.ndim != 3 or triangles.shape[1:] != (3, 3):
+        raise ValueError("mesh does not contain triangular faces")
+    if not np.all(np.isfinite(triangles)):
+        raise ValueError("mesh contains non-finite coordinates")
+
+    axis_u, axis_v = _projection_basis(direction)
+    projected = np.stack(
+        (triangles @ axis_u, triangles @ axis_v),
+        axis=-1,
+    )
+    spans = np.ptp(projected.reshape(-1, 2), axis=0)
+    scale = float(np.max(spans))
+    if not np.isfinite(scale) or scale <= 0.0:
+        raise ValueError("mesh projection has zero or invalid extent")
+
+    return _union_projected_triangles(projected, scale)
 
 
 def compute_sphericity(volume: float, surface_area: float) -> float:

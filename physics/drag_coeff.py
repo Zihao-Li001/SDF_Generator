@@ -55,7 +55,7 @@ def calculate_holzer_sommerfeld_drag(
         return 0.0
 
     # Viscous and Pressure drag components
-    term1 = 8.0 / (re * phi_cross)
+    term1 = 8.0 / (re * np.sqrt(phi_cross))
     term2 = 16.0 / (re * np.sqrt(phi))
     term3 = 3.0 / (np.sqrt(re) * (phi**0.75))
 
