@@ -1,6 +1,7 @@
 # SHPSG.py
 """
 [Core] Spherical Harmonics Particle Shape Generation(SHPSG)
+(https://github.com/budizhao/SHPSG)
 - Revised version
     - [Change] Inputs are changed from Ei, Fi to Aspect_ratio
     - [Add] Regularization based on equivalent sphere volume
