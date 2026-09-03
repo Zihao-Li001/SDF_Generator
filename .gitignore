@@ -1,6 +1,5 @@
 # ignore generated files
-dataset*
-*dataset
+archive**
 
 # configuration
 config.py
